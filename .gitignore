@@ -31,3 +31,6 @@ blockchain/history
 !.openzeppelin/goerli.json
 !.openzeppelin/rinkeby.json
 !.openzeppelin/mainnet.json
+
+.certora_internal
+.venv
