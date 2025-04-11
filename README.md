@@ -1,110 +1,80 @@
-# Sarcophagus Core
+# Sarcophagus × Certora Verification Suite
 
-[![Discord](https://img.shields.io/discord/753398645507883099?color=768AD4&label=discord)](https://discord.com/channels/753398645507883099/)
-[![Twitter](https://img.shields.io/twitter/follow/sarcophagusio?style=social)](https://twitter.com/sarcophagusio)
+Welcome 👋  
+This repository contains:
 
-Sarcophagus is a decentralized dead man's switch built on Ethereum and Arweave.
+1. **Sarcophagus** — a decentralized *Dead‑Man’s‑Switch* protocol written in Solidity.  
+2. **Certora specs & configs** that formally verify core safety properties.
 
-## Overview
+---
 
-This repository contains the smart contracts (and corresponding deployment scripts) that power the Sarcophagus system.
+## 1  What the Sarcophagus contract does
 
-## Configuration
+> “*…uses Ethereum as the source‑of‑truth, Arweave for encrypted storage, and a
+> decentralized network of secret‑holders (“archaeologists”) who reveal a
+> private key only if the embalmer stops checking‑in.*” — `Sarcophagus.sol`
 
-To work with the contracts you'll need to set some configuration values:
+### Key roles
 
-```sh
-$ cp .env.example .env
-```
+| Role | Responsibility |
+|------|----------------|
+| **Embalmer** | Creates a sarcophagus, pays fees, can extend/cancel/bury it. |
+| **Archaeologist** | Locks a bond, guards the secret key, earns fees/bounty if they behave. |
+| **Recipient** | Gets the secret once the switch triggers. |
+| **SARCO token** | ERC‑20 used for all fees, bounties and bonds. |
 
-Then open up `.env` and edit as you see fit. The default values are fine for local development.
+### Lifecycle (happy‑path)
 
-If you're going to be deploying to public blockchain networks (testnets, or mainnet), you need to enter a private key into the corresponding `<NETWORK>_PK` environment variable (starting with `0x`). Make sure this key has some ETH, to pay for the transaction fees! Also enter a URL for an ethereum provider into the `<NETWORK>_PROVIDER` environment variable.
+1. **createSarcophagus** – embalmer chooses an archaeologist, sets resurrection time & fees.  
+2. **updateSarcophagus** – embalmer uploads encrypted payload to Arweave and posts its `assetId`.  
+3. **rewrapSarcophagus** – optional extension of resurrection time.  
+4. **unwrapSarcophagus** – anyone can call after the deadline with the archaeologist’s key → funds are settled.  
+5. Optional escape hatches: **cancel**, **bury**, **cleanUp**, **accuseArchaeologist**.
 
-Next, install the project's dependencies
+All heavy logic lives in libraries (`Archaeologists.sol`, `Sarcophaguses.sol`, `Utils.sol`, …); the main contract is a thin proxy façade.
 
-```sh
-$ npm install
-```
+---
 
-Finally, you'll need to compile the contracts
+## 2  Why Certora? What we check
 
-```sh
-$ npm run compile
-```
+Certora Prover symbolically executes the EVM byte‑code and proves that **every
+possible execution** obeys the rules we state.  
+No fuzzing, no test vectors—*mathematical guarantees*.
 
-Now you're all set up for doing local development or deploying the contracts to a public network.
+### Our campaign
 
-## Local Development
+* **Config:** `certora/conf/sarcophagus.conf`  
+  * single target file (`contracts/Sarcophagus.sol`)  
+  * IR pipeline + optimizer enabled  
+* **Spec:** `certora/specs/sarcophagus.spec`  
+  * **11 rules** (single‑trace properties)  
+  * **1 invariant** (holds across all traces)
 
-"Running" the project consists of spinning up a local blockchain and deploying the contracts to that blockchain.
+### Highlighted properties
 
-Once you've done that, you'll be able to use any Ethereum wallet to connect to your local blockchain and interact with those contracts.
+| # | Rule / Invariant | What it guarantees |
+|---|------------------|--------------------|
+| 1 | **`registerIncreasesCount`** | Registering an archaeologist never reduces `archaeologistCount()`. |
+| 2 | **`registerReturnsValidIndex`** | The index returned by `registerArchaeologist` equals the previous length. |
+| 3 | **`updateDoesNotChangeCount`** | Updating a profile cannot create or delete archaeologists. |
+| 4 | **`withdrawDoesNotChangeCount`** | Bond withdrawals don’t affect the global count. |
+| 5 | **`createIncreasesSarcophagusCount`** | Creating a sarcophagus can only increase (or keep) the total count. |
+| 7–10 | **cancel/rewrap/bury/cleanup** rules | None of those ops are allowed to *increase* the sarcophagus counter. |
+| 11 | **`nonZeroArchaeologistAddress`** | Stored archaeologist addresses are never the zero address. |
+| — | **Invariant `validArchaeologistArray`** | *For every block*: every index `< archaeologistCount()` holds a non‑zero address. |
 
-Start a local blockchain via
+Implementation tricks:
 
-```sh
-$ npm run develop
-```
+* **Bootstrap helpers** create a dummy archaeologist & sarcophagus so we don’t operate on empty state.
+* Dynamic data (`string`, `bytes`) is capped to stay within Certora’s default `--hashing_length_bound = 224` bytes → no “unbounded hashing” errors.
 
-and then within the new Truffle Console, deploy the contracts by typing `migrate`
+---
 
-```
-truffle(develop)> migrate
-```
+## 3  Running the proofs locally
 
-In your console output you'll see both the Sarcophagus (Mock) Token and the Sarcopahgus contract being deployed, their transaction hashes, and their addresses.
+```bash
+# install once
+pip install certora-cli --upgrade
 
-## Testing
-
-To run the tests, run
-
-```sh
-$ npm run test
-```
-
-## Deployment
-
-Deployments ("migrations") happen via `truffle`.
-
-To deploy to the Goerli testnet, execute
-
-```sh
-$ npx truffle migrate --network goerli
-```
-
-To deploy to the Mainnet, execute
-
-```sh
-$ npx truffle migrate --network mainnet
-```
-
-Note: be sure to set your deployer private key, and provider, in `.env`
-
-To deploy to other networks, add the relevant network block into `truffle-config.js` and execute
-
-```sh
-$ npx truffle migrate --network <yourNewNetwork>
-```
-
-## Public Deployments
-
-The contracts are currently deployed on public networks. Please refer to the `deployed` directory for details.
-## Additional Tips
-
-If you make changes to the contracts, re-compile before executing any of the above commands:
-
-```sh
-$ npm run compile
-```
-
-In addition, If you're running on a local development environment (via `npm run develop`), you'll want to stop and restart it to reflect the changes.
-
-## Community
-
-[![Discord](https://img.shields.io/discord/753398645507883099?color=768AD4&label=discord)](https://discord.com/channels/753398645507883099/)
-[![Twitter](https://img.shields.io/twitter/follow/sarcophagusio?style=social)](https://twitter.com/sarcophagusio)
-
-We can also be found on [Telegram](https://t.me/sarcophagusio).
-
-Made with :skull: and proudly decentralized.
+# run campaign
+certoraRun certora/conf/sarcophagus.conf
